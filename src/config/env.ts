@@ -12,6 +12,7 @@ const envSchema = z.object({
   REDIS_URL: z.string().default('redis://localhost:6379'),
   UPLOAD_DIR: z.string().default('uploads'),
   FRONTEND_ORIGIN: z.string().default('http://localhost:5173'),
+  MESSAGE_ENCRYPTION_KEY: z.string().default(''),
   FIREBASE_PROJECT_ID: z.string().default(''),
   FIREBASE_CLIENT_EMAIL: z.string().default(''),
   FIREBASE_PRIVATE_KEY: z.string().default('')

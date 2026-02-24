@@ -2,6 +2,8 @@ import { MessageType, Role } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 import { ApiError } from '../../utils/api-error';
 import { triggerPushNotification } from '../../services/push-notification.service';
+import { decryptMessageContent, encryptMessageContent } from '../../utils/message-crypto';
+import { logger } from '../../config/logger';
 
 interface AuthContext {
   tenantId: string;
@@ -43,6 +45,24 @@ interface MarkAsReadInput extends AuthContext {
 interface MarkAsDeliveredInput extends AuthContext {
   messageId: string;
 }
+
+const decryptMessageForOutput = <T extends { id: string; content: string }>(message: T): T => {
+  try {
+    return {
+      ...message,
+      content: decryptMessageContent(message.content)
+    };
+  } catch (error) {
+    logger.error('Failed to decrypt message content for output', {
+      messageId: message.id,
+      error: error instanceof Error ? error.message : String(error)
+    });
+    return {
+      ...message,
+      content: '[Unable to decrypt message]'
+    };
+  }
+};
 
 export const hasConversationAccess = async (ctx: AuthContext, conversationId: string): Promise<boolean> => {
   if (ctx.role === 'ADMIN') {
@@ -187,7 +207,7 @@ export const getMessages = async (input: PaginatedMessagesInput) => {
   ]);
 
   return {
-    data: messages.reverse(),
+    data: messages.reverse().map((message) => decryptMessageForOutput(message)),
     pagination: {
       page: input.page,
       pageSize: input.pageSize,
@@ -252,7 +272,7 @@ export const sendMessage = async (input: SendMessageInput) => {
       tenantId: input.tenantId,
       senderId: input.userId,
       type: input.type,
-      content: input.content
+      content: encryptMessageContent(input.content)
     },
     include: {
       reactions: true,
@@ -273,7 +293,7 @@ export const sendMessage = async (input: SendMessageInput) => {
     messagePreview: input.type === 'TEXT' ? input.content.slice(0, 120) : `[${input.type}]`
   });
 
-  return message;
+  return decryptMessageForOutput(message);
 };
 
 export const reactToMessage = async (input: ReactionInput) => {

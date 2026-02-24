@@ -16,6 +16,7 @@ const envSchema = zod_1.z.object({
     REDIS_URL: zod_1.z.string().default('redis://localhost:6379'),
     UPLOAD_DIR: zod_1.z.string().default('uploads'),
     FRONTEND_ORIGIN: zod_1.z.string().default('http://localhost:5173'),
+    MESSAGE_ENCRYPTION_KEY: zod_1.z.string().default(''),
     FIREBASE_PROJECT_ID: zod_1.z.string().default(''),
     FIREBASE_CLIENT_EMAIL: zod_1.z.string().default(''),
     FIREBASE_PRIVATE_KEY: zod_1.z.string().default('')

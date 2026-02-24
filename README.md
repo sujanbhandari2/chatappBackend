@@ -6,6 +6,7 @@
 - Prisma query middleware auto-filters tenant-scoped models (`users`, `conversations`, `messages`).
 - Chat services validate participation/admin rights before read/write actions.
 - Socket handshake validates JWT and enforces tenant room scoping.
+- Message content is encrypted at rest on the server (AES-256-GCM) before DB write and decrypted on API/socket read.
 
 ## Authentication Flow
 - `POST /api/auth/register` with `{ username, password }` creates a user in the default tenant.
@@ -29,6 +30,11 @@ npm run prisma:migrate
 npm run seed
 npm run dev
 ```
+
+## Server-Side Message Encryption
+- Set `MESSAGE_ENCRYPTION_KEY` in env for a dedicated encryption key.
+- If `MESSAGE_ENCRYPTION_KEY` is not set, the backend derives encryption key material from `JWT_SECRET` to keep encryption active.
+- Existing plaintext rows remain readable; newly sent messages are stored encrypted with `enc:v1:` payload format.
 
 ## FCM Push Setup
 - Set backend env:
