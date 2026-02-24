@@ -4,6 +4,26 @@ exports.markAsDelivered = exports.markAsRead = exports.deleteMessage = exports.r
 const prisma_1 = require("../../config/prisma");
 const api_error_1 = require("../../utils/api-error");
 const push_notification_service_1 = require("../../services/push-notification.service");
+const message_crypto_1 = require("../../utils/message-crypto");
+const logger_1 = require("../../config/logger");
+const decryptMessageForOutput = (message) => {
+    try {
+        return {
+            ...message,
+            content: (0, message_crypto_1.decryptMessageContent)(message.content)
+        };
+    }
+    catch (error) {
+        logger_1.logger.error('Failed to decrypt message content for output', {
+            messageId: message.id,
+            error: error instanceof Error ? error.message : String(error)
+        });
+        return {
+            ...message,
+            content: '[Unable to decrypt message]'
+        };
+    }
+};
 const hasConversationAccess = async (ctx, conversationId) => {
     if (ctx.role === 'ADMIN') {
         const conversation = await prisma_1.prisma.conversation.findFirst({
@@ -133,7 +153,7 @@ const getMessages = async (input) => {
         })
     ]);
     return {
-        data: messages.reverse(),
+        data: messages.reverse().map((message) => decryptMessageForOutput(message)),
         pagination: {
             page: input.page,
             pageSize: input.pageSize,
@@ -193,7 +213,7 @@ const sendMessage = async (input) => {
             tenantId: input.tenantId,
             senderId: input.userId,
             type: input.type,
-            content: input.content
+            content: (0, message_crypto_1.encryptMessageContent)(input.content)
         },
         include: {
             reactions: true,
@@ -211,7 +231,7 @@ const sendMessage = async (input) => {
         recipientUserIds: participants.filter((p) => p.userId !== input.userId).map((p) => p.userId),
         messagePreview: input.type === 'TEXT' ? input.content.slice(0, 120) : `[${input.type}]`
     });
-    return message;
+    return decryptMessageForOutput(message);
 };
 exports.sendMessage = sendMessage;
 const reactToMessage = async (input) => {
