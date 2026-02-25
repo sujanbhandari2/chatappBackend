@@ -2,6 +2,7 @@ import { MessageType, Role } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 import { ApiError } from '../../utils/api-error';
 import { triggerPushNotification } from '../../services/push-notification.service';
+import { getSignedFileUrl } from '../../services/file-storage.service';
 import { decryptMessageContent, encryptMessageContent } from '../../utils/message-crypto';
 import { logger } from '../../config/logger';
 
@@ -46,14 +47,24 @@ interface MarkAsDeliveredInput extends AuthContext {
   messageId: string;
 }
 
-const decryptMessageForOutput = <T extends { id: string; content: string }>(message: T): T => {
+const isAssetMessage = (type: MessageType): boolean => type === 'IMAGE' || type === 'VOICE';
+
+const resolveMessageForOutput = async <T extends { id: string; content: string; type: MessageType }>(
+  message: T,
+  tenantId: string
+): Promise<T> => {
   try {
+    const decryptedContent = decryptMessageContent(message.content);
+    const resolvedContent = isAssetMessage(message.type)
+      ? await getSignedFileUrl(decryptedContent, tenantId)
+      : decryptedContent;
+
     return {
       ...message,
-      content: decryptMessageContent(message.content)
+      content: resolvedContent
     };
   } catch (error) {
-    logger.error('Failed to decrypt message content for output', {
+    logger.error('Failed to resolve message content for output', {
       messageId: message.id,
       error: error instanceof Error ? error.message : String(error)
     });
@@ -207,7 +218,7 @@ export const getMessages = async (input: PaginatedMessagesInput) => {
   ]);
 
   return {
-    data: messages.reverse().map((message) => decryptMessageForOutput(message)),
+    data: await Promise.all(messages.reverse().map((message) => resolveMessageForOutput(message, input.tenantId))),
     pagination: {
       page: input.page,
       pageSize: input.pageSize,
@@ -293,7 +304,7 @@ export const sendMessage = async (input: SendMessageInput) => {
     messagePreview: input.type === 'TEXT' ? input.content.slice(0, 120) : `[${input.type}]`
   });
 
-  return decryptMessageForOutput(message);
+  return resolveMessageForOutput(message, input.tenantId);
 };
 
 export const reactToMessage = async (input: ReactionInput) => {

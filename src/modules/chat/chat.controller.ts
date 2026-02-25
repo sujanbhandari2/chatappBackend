@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response } from 'express';
 import * as chatService from './chat.service';
 import { ApiError } from '../../utils/api-error';
+import { uploadFileToS3 } from '../../services/file-storage.service';
 
 const getAuthContext = (req: Request) => {
   if (!req.user) {
@@ -63,13 +64,25 @@ export const createConversation = async (req: Request, res: Response, next: Next
 
 export const uploadFile = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
+    const user = getAuthContext(req);
+
     if (!req.file) {
       throw new ApiError(400, 'file is required');
     }
 
-    res.status(201).json({
-      url: `/uploads/${req.file.filename}`,
+    const uploadResult = await uploadFileToS3({
+      buffer: req.file.buffer,
       mimetype: req.file.mimetype,
+      originalName: req.file.originalname,
+      tenantId: user.tenantId,
+      userId: user.id
+    });
+
+    res.status(201).json({
+      url: uploadResult.url,
+      key: uploadResult.key,
+      mimeType: uploadResult.mimeType,
+      mimetype: uploadResult.mimeType,
       size: req.file.size
     });
   } catch (error) {
