@@ -1,4 +1,3 @@
-import { MessageType, Role } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 import { ApiError } from '../../utils/api-error';
 import { triggerPushNotification } from '../../services/push-notification.service';
@@ -6,10 +5,11 @@ import { getSignedFileUrl } from '../../services/file-storage.service';
 import { decryptMessageContent, encryptMessageContent } from '../../utils/message-crypto';
 import { logger } from '../../config/logger';
 
+type MessageKind = 'TEXT' | 'IMAGE' | 'VOICE';
+
 interface AuthContext {
   tenantId: string;
   userId: string;
-  role: Role;
 }
 
 interface PaginatedMessagesInput extends AuthContext {
@@ -24,15 +24,20 @@ interface CreateConversationInput {
   participantIds: string[];
 }
 
-interface SendMessageInput extends AuthContext {
-  conversationId: string;
-  type: MessageType;
-  content: string;
+interface CreateDirectConversationInput extends AuthContext {
+  targetUserId: string;
 }
 
-interface ReactionInput extends AuthContext {
-  messageId: string;
-  reactionType: string;
+interface CreateGroupConversationInput extends AuthContext {
+  title: string;
+  participantIds: string[];
+}
+
+interface SendMessageInput extends AuthContext {
+  conversationId: string;
+  type: MessageKind;
+  content: string;
+  replyToMessageId?: string;
 }
 
 interface DeleteMessageInput extends AuthContext {
@@ -47,15 +52,53 @@ interface MarkAsDeliveredInput extends AuthContext {
   messageId: string;
 }
 
-const isAssetMessage = (type: MessageType): boolean => type === 'IMAGE' || type === 'VOICE';
+interface AddReactionInput extends AuthContext {
+  messageId: string;
+  emoji: string;
+}
 
-const resolveMessageForOutput = async <T extends { id: string; content: string; type: MessageType }>(
+interface RemoveReactionInput extends AuthContext {
+  messageId: string;
+  emoji: string;
+}
+
+const isAssetMessage = (type: string): boolean => type === 'IMAGE' || type === 'VOICE';
+
+const reactionInclude = {
+  user: {
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      avatarUrl: true,
+      status: true
+    }
+  }
+} as const;
+
+const conversationInclude = {
+  participants: {
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          avatarUrl: true,
+          status: true
+        }
+      }
+    }
+  }
+} as const;
+
+const resolveMessageForOutput = async <T extends { id: string; content: string; messageType: string }>(
   message: T,
   tenantId: string
 ): Promise<T> => {
   try {
     const decryptedContent = decryptMessageContent(message.content);
-    const resolvedContent = isAssetMessage(message.type)
+    const resolvedContent = isAssetMessage(message.messageType)
       ? await getSignedFileUrl(decryptedContent, tenantId)
       : decryptedContent;
 
@@ -75,18 +118,31 @@ const resolveMessageForOutput = async <T extends { id: string; content: string; 
   }
 };
 
-export const hasConversationAccess = async (ctx: AuthContext, conversationId: string): Promise<boolean> => {
-  if (ctx.role === 'ADMIN') {
-    const conversation = await prisma.conversation.findFirst({
-      where: {
-        id: conversationId,
-        tenantId: ctx.tenantId
-      }
-    });
+const resolveMessageReplyForOutput = async <
+  T extends {
+    id: string;
+    content: string;
+    messageType: string;
+    replyToMessage?: { id: string; content: string; messageType: string } | null;
+  }
+>(
+  message: T,
+  tenantId: string
+): Promise<T> => {
+  const resolved = await resolveMessageForOutput(message, tenantId);
 
-    return Boolean(conversation);
+  if (!resolved.replyToMessage) {
+    return resolved;
   }
 
+  const reply = await resolveMessageForOutput(resolved.replyToMessage, tenantId);
+  return {
+    ...resolved,
+    replyToMessage: reply
+  };
+};
+
+export const hasConversationAccess = async (ctx: AuthContext, conversationId: string): Promise<boolean> => {
   const participant = await prisma.conversationParticipant.findFirst({
     where: {
       conversationId,
@@ -112,7 +168,9 @@ const assertMessageAccess = async (ctx: AuthContext, messageId: string) => {
   const message = await prisma.message.findFirst({
     where: {
       id: messageId,
-      tenantId: ctx.tenantId
+      conversation: {
+        tenantId: ctx.tenantId
+      }
     },
     include: {
       conversation: {
@@ -131,7 +189,7 @@ const assertMessageAccess = async (ctx: AuthContext, messageId: string) => {
 
   const isParticipant = message.conversation.participants.some((item) => item.userId === ctx.userId);
 
-  if (ctx.role !== 'ADMIN' && !isParticipant) {
+  if (!isParticipant) {
     throw new ApiError(403, 'Access denied for this message');
   }
 
@@ -139,28 +197,6 @@ const assertMessageAccess = async (ctx: AuthContext, messageId: string) => {
 };
 
 export const getConversations = async (ctx: AuthContext) => {
-  if (ctx.role === 'ADMIN') {
-    return prisma.conversation.findMany({
-      where: {
-        tenantId: ctx.tenantId
-      },
-      include: {
-        participants: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                username: true,
-                role: true
-              }
-            }
-          }
-        }
-      },
-      orderBy: [{ isGlobal: 'desc' }, { createdAt: 'desc' }]
-    });
-  }
-
   return prisma.conversation.findMany({
     where: {
       tenantId: ctx.tenantId,
@@ -170,20 +206,8 @@ export const getConversations = async (ctx: AuthContext) => {
         }
       }
     },
-    include: {
-      participants: {
-        include: {
-          user: {
-            select: {
-              id: true,
-              username: true,
-              role: true
-            }
-          }
-        }
-      }
-    },
-    orderBy: [{ isGlobal: 'desc' }, { createdAt: 'desc' }]
+    include: conversationInclude,
+    orderBy: [{ createdAt: 'desc' }]
   });
 };
 
@@ -196,18 +220,34 @@ export const getMessages = async (input: PaginatedMessagesInput) => {
     prisma.message.count({
       where: {
         conversationId: input.conversationId,
-        tenantId: input.tenantId
+        conversation: {
+          tenantId: input.tenantId
+        }
       }
     }),
     prisma.message.findMany({
       where: {
         conversationId: input.conversationId,
-        tenantId: input.tenantId
+        conversation: {
+          tenantId: input.tenantId
+        }
       },
       include: {
-        reactions: true,
-        deliveredReceipts: true,
-        readReceipts: true
+        attachments: true,
+        replyToMessage: {
+          select: {
+            id: true,
+            senderId: true,
+            content: true,
+            messageType: true
+          }
+        },
+        reactions: {
+          include: reactionInclude,
+          orderBy: {
+            createdAt: 'asc'
+          }
+        }
       },
       orderBy: {
         createdAt: 'desc'
@@ -218,7 +258,7 @@ export const getMessages = async (input: PaginatedMessagesInput) => {
   ]);
 
   return {
-    data: await Promise.all(messages.reverse().map((message) => resolveMessageForOutput(message, input.tenantId))),
+    data: await Promise.all(messages.reverse().map((message) => resolveMessageReplyForOutput(message, input.tenantId))),
     pagination: {
       page: input.page,
       pageSize: input.pageSize,
@@ -250,45 +290,188 @@ export const createConversation = async (input: CreateConversationInput) => {
   const conversation = await prisma.conversation.create({
     data: {
       tenantId: input.tenantId,
+      createdBy: input.creatorId,
+      type: 'GROUP',
       participants: {
         createMany: {
           data: participantIds.map((userId) => ({ userId }))
         }
       }
     },
-    include: {
-      participants: {
-        include: {
-          user: {
-            select: {
-              id: true,
-              username: true,
-              role: true
-            }
-          }
-        }
-      }
-    }
+    include: conversationInclude
   });
 
   return conversation;
 };
 
+export const createOrGetDirectConversation = async (input: CreateDirectConversationInput) => {
+  if (input.targetUserId === input.userId) {
+    throw new ApiError(400, 'Cannot start direct chat with yourself');
+  }
+
+  const targetUser = await prisma.user.findFirst({
+    where: {
+      id: input.targetUserId,
+      tenantId: input.tenantId
+    },
+    select: { id: true }
+  });
+
+  if (!targetUser) {
+    throw new ApiError(404, 'User not found in tenant');
+  }
+
+  const existing = await prisma.conversation.findFirst({
+    where: {
+      tenantId: input.tenantId,
+      type: 'DIRECT',
+      participants: {
+        every: {
+          userId: {
+            in: [input.userId, input.targetUserId]
+          }
+        },
+        some: {
+          userId: input.userId
+        }
+      },
+      AND: [
+        {
+          participants: {
+            some: {
+              userId: input.targetUserId
+            }
+          }
+        }
+      ]
+    },
+    include: conversationInclude
+  });
+
+  if (existing && existing.participants.length === 2) {
+    return existing;
+  }
+
+  return prisma.conversation.create({
+    data: {
+      tenantId: input.tenantId,
+      createdBy: input.userId,
+      type: 'DIRECT',
+      participants: {
+        createMany: {
+          data: [{ userId: input.userId }, { userId: input.targetUserId }]
+        }
+      }
+    },
+    include: conversationInclude
+  });
+};
+
+export const createGroupConversation = async (input: CreateGroupConversationInput) => {
+  const participantIds = Array.from(new Set([...input.participantIds, input.userId]));
+
+  const users = await prisma.user.findMany({
+    where: {
+      id: {
+        in: participantIds
+      },
+      tenantId: input.tenantId
+    },
+    select: {
+      id: true
+    }
+  });
+
+  if (users.length !== participantIds.length) {
+    throw new ApiError(400, 'One or more users are not in the tenant');
+  }
+
+  return prisma.conversation.create({
+    data: {
+      tenantId: input.tenantId,
+      createdBy: input.userId,
+      type: 'GROUP',
+      title: input.title.trim(),
+      participants: {
+        createMany: {
+          data: participantIds.map((userId) => ({ userId }))
+        }
+      }
+    },
+    include: conversationInclude
+  });
+};
+
 export const sendMessage = async (input: SendMessageInput) => {
   await assertConversationAccess(input, input.conversationId);
+
+  const conversation = await prisma.conversation.findFirst({
+    where: {
+      id: input.conversationId,
+      tenantId: input.tenantId
+    },
+    select: {
+      id: true,
+      type: true
+    }
+  });
+
+  if (!conversation) {
+    throw new ApiError(404, 'Conversation not found');
+  }
+
+  if (input.replyToMessageId) {
+    const parentMessage = await prisma.message.findFirst({
+      where: {
+        id: input.replyToMessageId,
+        conversationId: input.conversationId
+      },
+      select: { id: true }
+    });
+
+    if (!parentMessage) {
+      throw new ApiError(400, 'Reply target not found in this conversation');
+    }
+
+    if (conversation.type === 'DIRECT') {
+      const existingReply = await prisma.message.findFirst({
+        where: {
+          conversationId: input.conversationId,
+          replyToMessageId: input.replyToMessageId
+        },
+        select: { id: true }
+      });
+
+      if (existingReply) {
+        throw new ApiError(409, 'Direct chat allows only one reply per message');
+      }
+    }
+  }
 
   const message = await prisma.message.create({
     data: {
       conversationId: input.conversationId,
-      tenantId: input.tenantId,
       senderId: input.userId,
-      type: input.type,
-      content: encryptMessageContent(input.content)
+      messageType: input.type,
+      content: encryptMessageContent(input.content),
+      replyToMessageId: input.replyToMessageId
     },
     include: {
-      reactions: true,
-      deliveredReceipts: true,
-      readReceipts: true
+      attachments: true,
+      replyToMessage: {
+        select: {
+          id: true,
+          senderId: true,
+          content: true,
+          messageType: true
+        }
+      },
+      reactions: {
+        include: reactionInclude,
+        orderBy: {
+          createdAt: 'asc'
+        }
+      }
     }
   });
 
@@ -304,53 +487,79 @@ export const sendMessage = async (input: SendMessageInput) => {
     messagePreview: input.type === 'TEXT' ? input.content.slice(0, 120) : `[${input.type}]`
   });
 
-  return resolveMessageForOutput(message, input.tenantId);
+  return resolveMessageReplyForOutput(message, input.tenantId);
 };
 
-export const reactToMessage = async (input: ReactionInput) => {
+const getMessageReactions = async (messageId: string) => {
+  return prisma.reaction.findMany({
+    where: { messageId },
+    include: reactionInclude,
+    orderBy: {
+      createdAt: 'asc'
+    }
+  });
+};
+
+export const addReaction = async (input: AddReactionInput) => {
   const message = await assertMessageAccess(input, input.messageId);
 
-  if (message.deletedAt) {
-    throw new ApiError(400, 'Cannot react to deleted message');
-  }
-
-  const reaction = await prisma.messageReaction.upsert({
+  await prisma.reaction.upsert({
     where: {
-      messageId_userId: {
+      messageId_userId_emoji: {
         messageId: input.messageId,
-        userId: input.userId
+        userId: input.userId,
+        emoji: input.emoji
       }
     },
-    update: {
-      reactionType: input.reactionType
-    },
     create: {
+      tenantId: input.tenantId,
       messageId: input.messageId,
       userId: input.userId,
-      reactionType: input.reactionType
+      emoji: input.emoji
+    },
+    update: {}
+  });
+
+  const reactions = await getMessageReactions(input.messageId);
+
+  return {
+    messageId: input.messageId,
+    conversationId: message.conversationId,
+    reactions
+  };
+};
+
+export const removeReaction = async (input: RemoveReactionInput) => {
+  const message = await assertMessageAccess(input, input.messageId);
+
+  await prisma.reaction.deleteMany({
+    where: {
+      messageId: input.messageId,
+      userId: input.userId,
+      emoji: input.emoji
     }
   });
 
+  const reactions = await getMessageReactions(input.messageId);
+
   return {
-    ...reaction,
-    conversationId: message.conversationId
+    messageId: input.messageId,
+    conversationId: message.conversationId,
+    reactions
   };
 };
 
 export const deleteMessage = async (input: DeleteMessageInput) => {
   const message = await assertMessageAccess(input, input.messageId);
 
-  if (input.role !== 'ADMIN' && message.senderId !== input.userId) {
-    throw new ApiError(403, 'Only message sender or admin can delete this message');
+  if (message.senderId !== input.userId) {
+    throw new ApiError(403, 'Only message sender can delete this message');
   }
 
   const deletedAt = new Date();
 
   await prisma.message.updateMany({
-    where: {
-      id: input.messageId,
-      tenantId: input.tenantId
-    },
+    where: { id: input.messageId },
     data: {
       deletedAt,
       content: '[deleted]'
@@ -366,69 +575,75 @@ export const deleteMessage = async (input: DeleteMessageInput) => {
 
 export const markAsRead = async (input: MarkAsReadInput) => {
   const message = await assertMessageAccess(input, input.messageId);
+  const now = new Date();
 
-  await prisma.deliveryReceipt.upsert({
-    where: {
-      messageId_userId: {
-        messageId: input.messageId,
-        userId: input.userId
+  await prisma.$transaction([
+    prisma.message.update({
+      where: { id: input.messageId },
+      data: {
+        readAt: now,
+        deliveredAt: message.deliveredAt ?? now
       }
-    },
-    update: {
-      deliveredAt: new Date()
-    },
-    create: {
-      messageId: input.messageId,
-      userId: input.userId,
-      deliveredAt: new Date()
-    }
-  });
-
-  const readReceipt = await prisma.readReceipt.upsert({
-    where: {
-      messageId_userId: {
-        messageId: input.messageId,
-        userId: input.userId
+    }),
+    prisma.conversationParticipant.upsert({
+      where: {
+        conversationId_userId: {
+          conversationId: message.conversationId,
+          userId: input.userId
+        }
+      },
+      create: {
+        conversationId: message.conversationId,
+        userId: input.userId,
+        lastReadMessageId: message.id,
+        lastDeliveredMessageId: message.id
+      },
+      update: {
+        lastReadMessageId: message.id,
+        lastDeliveredMessageId: message.id
       }
-    },
-    update: {
-      readAt: new Date()
-    },
-    create: {
-      messageId: input.messageId,
-      userId: input.userId,
-      readAt: new Date()
-    }
-  });
+    })
+  ]);
 
   return {
-    ...readReceipt,
+    messageId: message.id,
+    userId: input.userId,
+    readAt: now,
     conversationId: message.conversationId
   };
 };
 
 export const markAsDelivered = async (input: MarkAsDeliveredInput) => {
   const message = await assertMessageAccess(input, input.messageId);
+  const now = new Date();
 
-  const deliveredReceipt = await prisma.deliveryReceipt.upsert({
-    where: {
-      messageId_userId: {
-        messageId: input.messageId,
-        userId: input.userId
+  await prisma.$transaction([
+    prisma.message.update({
+      where: { id: input.messageId },
+      data: { deliveredAt: now }
+    }),
+    prisma.conversationParticipant.upsert({
+      where: {
+        conversationId_userId: {
+          conversationId: message.conversationId,
+          userId: input.userId
+        }
+      },
+      create: {
+        conversationId: message.conversationId,
+        userId: input.userId,
+        lastDeliveredMessageId: message.id
+      },
+      update: {
+        lastDeliveredMessageId: message.id
       }
-    },
-    update: {
-      deliveredAt: new Date()
-    },
-    create: {
-      messageId: input.messageId,
-      userId: input.userId,
-      deliveredAt: new Date()
-    }
-  });
+    })
+  ]);
 
   return {
-    ...deliveredReceipt,
+    messageId: message.id,
+    userId: input.userId,
+    deliveredAt: now,
     conversationId: message.conversationId
   };
 };

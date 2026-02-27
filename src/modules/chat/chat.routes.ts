@@ -6,6 +6,8 @@ import * as chatController from './chat.controller';
 import {
   conversationParamsSchema,
   createConversationSchema,
+  createDirectConversationSchema,
+  createGroupConversationSchema,
   messagePaginationQuerySchema
 } from './chat.schemas';
 
@@ -29,6 +31,16 @@ router.post(
   '/conversations',
   validate({ body: createConversationSchema }),
   chatController.createConversation
+);
+router.post(
+  '/conversations/direct',
+  validate({ body: createDirectConversationSchema }),
+  chatController.createDirectConversation
+);
+router.post(
+  '/conversations/group',
+  validate({ body: createGroupConversationSchema }),
+  chatController.createGroupConversation
 );
 router.post('/upload', upload.single('file'), chatController.uploadFile);
 

@@ -16,12 +16,9 @@ beforeAll(async () => {
 beforeEach(async () => {
   await prisma.$executeRawUnsafe(`
     TRUNCATE TABLE
-      read_receipts,
-      delivery_receipts,
-      message_reactions,
+      attachments,
       messages,
-      user_push_tokens,
-      conversation_participants,
+      participants,
       conversations,
       users,
       tenants

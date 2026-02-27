@@ -4,6 +4,15 @@ export const createConversationSchema = z.object({
   participantIds: z.array(z.string().uuid()).min(1)
 });
 
+export const createDirectConversationSchema = z.object({
+  userId: z.string().uuid()
+});
+
+export const createGroupConversationSchema = z.object({
+  title: z.string().min(1).max(120),
+  participantIds: z.array(z.string().uuid()).min(2)
+});
+
 export const conversationParamsSchema = z.object({
   id: z.string().uuid()
 });
@@ -16,12 +25,8 @@ export const messagePaginationQuerySchema = z.object({
 export const sendMessageSchema = z.object({
   conversationId: z.string().uuid(),
   type: z.enum(['TEXT', 'IMAGE', 'VOICE']),
-  content: z.string().min(1).max(5000)
-});
-
-export const reactToMessageSchema = z.object({
-  messageId: z.string().uuid(),
-  reactionType: z.string().min(1).max(32)
+  content: z.string().min(1).max(5000),
+  replyToMessageId: z.string().uuid().optional()
 });
 
 export const deleteMessageSchema = z.object({
@@ -35,3 +40,10 @@ export const markAsReadSchema = z.object({
 export const markAsDeliveredSchema = z.object({
   messageId: z.string().uuid()
 });
+
+export const addReactionSchema = z.object({
+  messageId: z.string().uuid(),
+  emoji: z.string().min(1).max(32)
+});
+
+export const removeReactionSchema = addReactionSchema;

@@ -3,7 +3,6 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 interface TenantContextState {
   tenantId?: string;
   userId?: string;
-  role?: 'CLIENT' | 'AGENT' | 'ADMIN';
 }
 
 const storage = new AsyncLocalStorage<TenantContextState>();

@@ -1,17 +1,17 @@
-import { Role } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 import { ApiError } from '../../utils/api-error';
 import { signToken } from '../../utils/jwt';
-import { comparePassword, hashPassword } from '../../utils/password';
 
 interface RegisterInput {
-  username: string;
-  password: string;
+  tenantId?: string;
+  name: string;
+  email: string;
+  status?: string;
 }
 
 interface LoginInput {
-  username: string;
-  password: string;
+  tenantId: string;
+  email: string;
 }
 
 const DEFAULT_TENANT_NAME = 'Public Healthcare Chat';
@@ -32,33 +32,16 @@ const ensureDefaultTenant = async () => {
   });
 };
 
-const ensureUserInGlobalConversation = async (tenantId: string, userId: string): Promise<void> => {
-  let globalConversation = await prisma.conversation.findFirst({
-    where: {
-      tenantId,
-      isGlobal: true
-    }
-  });
-
-  if (!globalConversation) {
-    globalConversation = await prisma.conversation.create({
-      data: {
-        tenantId,
-        isGlobal: true
-      }
-    });
+const ensureTenant = async (tenantId?: string) => {
+  if (!tenantId) {
+    return ensureDefaultTenant();
   }
 
-  await prisma.conversationParticipant.upsert({
-    where: {
-      conversationId_userId: {
-        conversationId: globalConversation.id,
-        userId
-      }
-    },
+  return prisma.tenant.upsert({
+    where: { id: tenantId },
     create: {
-      conversationId: globalConversation.id,
-      userId
+      id: tenantId,
+      name: `Tenant ${tenantId}`
     },
     update: {}
   });
@@ -66,71 +49,82 @@ const ensureUserInGlobalConversation = async (tenantId: string, userId: string):
 
 const formatAuthResponse = (user: {
   id: string;
-  username: string;
   tenantId: string;
-  role: Role;
+  name: string | null;
+  email: string;
+  status: string | null;
 }) => {
   const token = signToken({
     userId: user.id,
     tenantId: user.tenantId,
-    role: user.role,
-    username: user.username
+    name: user.name ?? 'Anonymous',
+    email: user.email,
+    status: user.status ?? 'ACTIVE'
   });
 
   return {
     token,
     user: {
       id: user.id,
-      username: user.username,
+      name: user.name,
+      email: user.email,
       tenantId: user.tenantId,
-      role: user.role
+      status: user.status
     }
   };
 };
 
 export const register = async (input: RegisterInput) => {
-  const normalizedUsername = input.username.trim().toLowerCase();
+  const normalizedEmail = input.email.trim().toLowerCase();
+  const normalizedName = input.name.trim();
+  const normalizedStatus = input.status?.trim() || 'ACTIVE';
 
-  const existingUser = await prisma.user.findUnique({
+  const tenant = await ensureTenant(input.tenantId);
+  const existingUser = await prisma.user.findFirst({
     where: {
-      username: normalizedUsername
-    }
+      tenantId: tenant.id,
+      email: normalizedEmail
+    },
+    select: { id: true }
   });
 
   if (existingUser) {
-    throw new ApiError(409, 'Username already exists');
+    throw new ApiError(409, 'Email already exists in tenant');
   }
-
-  const tenant = await ensureDefaultTenant();
-  const passwordHash = await hashPassword(input.password);
 
   const user = await prisma.user.create({
     data: {
       tenantId: tenant.id,
-      role: 'CLIENT',
-      username: normalizedUsername,
-      email: `${normalizedUsername}@local.chat`,
-      passwordHash
+      name: normalizedName,
+      email: normalizedEmail,
+      status: normalizedStatus
     },
     select: {
       id: true,
-      username: true,
       tenantId: true,
-      role: true
+      name: true,
+      email: true,
+      status: true
     }
   });
-
-  await ensureUserInGlobalConversation(user.tenantId, user.id);
 
   return formatAuthResponse(user);
 };
 
 export const login = async (input: LoginInput) => {
-  const normalizedUsername = input.username.trim().toLowerCase();
+  const normalizedEmail = input.email.trim().toLowerCase();
 
-  const user = await prisma.user.findUnique({
+  const user = await prisma.user.findFirst({
     where: {
-      username: normalizedUsername
+      tenantId: input.tenantId,
+      email: normalizedEmail
+    },
+    select: {
+      id: true,
+      tenantId: true,
+      name: true,
+      email: true,
+      status: true
     }
   });
 
@@ -138,18 +132,5 @@ export const login = async (input: LoginInput) => {
     throw new ApiError(401, 'Invalid credentials');
   }
 
-  const isPasswordValid = await comparePassword(input.password, user.passwordHash);
-
-  if (!isPasswordValid) {
-    throw new ApiError(401, 'Invalid credentials');
-  }
-
-  await ensureUserInGlobalConversation(user.tenantId, user.id);
-
-  return formatAuthResponse({
-    id: user.id,
-    username: user.username,
-    tenantId: user.tenantId,
-    role: user.role
-  });
+  return formatAuthResponse(user);
 };

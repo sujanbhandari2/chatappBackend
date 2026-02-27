@@ -16,8 +16,7 @@ export const getConversations = async (req: Request, res: Response, next: NextFu
     const user = getAuthContext(req);
     const conversations = await chatService.getConversations({
       tenantId: user.tenantId,
-      userId: user.id,
-      role: user.role
+      userId: user.id
     });
 
     res.status(200).json({ data: conversations });
@@ -35,7 +34,6 @@ export const getMessages = async (req: Request, res: Response, next: NextFunctio
     const result = await chatService.getMessages({
       tenantId: user.tenantId,
       userId: user.id,
-      role: user.role,
       conversationId: id,
       page,
       pageSize
@@ -53,6 +51,45 @@ export const createConversation = async (req: Request, res: Response, next: Next
     const conversation = await chatService.createConversation({
       tenantId: user.tenantId,
       creatorId: user.id,
+      participantIds: req.body.participantIds
+    });
+
+    res.status(201).json(conversation);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const createDirectConversation = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const user = getAuthContext(req);
+    const conversation = await chatService.createOrGetDirectConversation({
+      tenantId: user.tenantId,
+      userId: user.id,
+      targetUserId: req.body.userId
+    });
+
+    res.status(200).json(conversation);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const createGroupConversation = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const user = getAuthContext(req);
+    const conversation = await chatService.createGroupConversation({
+      tenantId: user.tenantId,
+      userId: user.id,
+      title: req.body.title,
       participantIds: req.body.participantIds
     });
 

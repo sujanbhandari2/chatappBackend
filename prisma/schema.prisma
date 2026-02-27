@@ -8,32 +8,13 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum Role {
-  CLIENT
-  AGENT
-  ADMIN
-}
-
-enum MessageType {
-  TEXT
-  IMAGE
-  VOICE
-}
-
-enum DevicePlatform {
-  IOS
-  ANDROID
-  WEB
-}
-
 model Tenant {
   id            String         @id @default(uuid())
   name          String
   createdAt     DateTime       @default(now()) @map("created_at")
   users         User[]
   conversations Conversation[]
-  messages      Message[]
-  pushTokens    UserPushToken[]
+  reactions     Reaction[]
 
   @@map("tenants")
 }
@@ -41,130 +22,108 @@ model Tenant {
 model User {
   id                       String                    @id @default(uuid())
   tenantId                 String                    @map("tenant_id")
-  role                     Role
-  username                 String
+  name                     String?
   email                    String
-  passwordHash             String                    @map("password_hash")
+  avatarUrl                String?                   @map("avatar_url")
+  status                   String?
   createdAt                DateTime                  @default(now()) @map("created_at")
   tenant                   Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdConversations     Conversation[]            @relation("conversation_creator")
   conversationParticipants ConversationParticipant[]
   messagesSent             Message[]                 @relation("message_sender")
-  reactions                MessageReaction[]
-  deliveredReceipts        DeliveryReceipt[]
-  readReceipts             ReadReceipt[]
-  pushTokens               UserPushToken[]
+  reactions                Reaction[]
 
   @@unique([tenantId, email])
-  @@unique([username])
-  @@unique([id, tenantId])
   @@index([tenantId])
-  @@index([username])
   @@index([email])
   @@map("users")
 }
 
-model UserPushToken {
-  id         String         @id @default(uuid())
-  tenantId   String         @map("tenant_id")
-  userId     String         @map("user_id")
-  token      String
-  platform   DevicePlatform
-  deviceId   String?        @map("device_id")
-  createdAt  DateTime       @default(now()) @map("created_at")
-  updatedAt  DateTime       @updatedAt @map("updated_at")
-  lastSeenAt DateTime       @default(now()) @map("last_seen_at")
-  tenant     Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user       User           @relation(fields: [userId, tenantId], references: [id, tenantId], onDelete: Cascade)
-
-  @@unique([token])
-  @@index([tenantId, userId])
-  @@map("user_push_tokens")
-}
-
 model Conversation {
-  id              String                    @id @default(uuid())
-  tenantId        String                    @map("tenant_id")
-  isGlobal        Boolean                   @default(false) @map("is_global")
-  createdAt       DateTime                  @default(now()) @map("created_at")
-  tenant          Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  participants    ConversationParticipant[]
-  messages        Message[]
+  id           String                    @id @default(uuid())
+  tenantId     String                    @map("tenant_id")
+  type         String?
+  title        String?
+  createdBy    String?                   @map("created_by")
+  createdAt    DateTime                  @default(now()) @map("created_at")
+  tenant       Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  creator      User?                     @relation("conversation_creator", fields: [createdBy], references: [id], onDelete: SetNull)
+  participants ConversationParticipant[]
+  messages     Message[]
 
-  @@unique([id, tenantId])
   @@index([tenantId])
-  @@index([tenantId, isGlobal])
   @@map("conversations")
 }
 
 model ConversationParticipant {
-  id             String       @id @default(uuid())
-  conversationId String       @map("conversation_id")
-  userId         String       @map("user_id")
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversationId         String                   @map("conversation_id")
+  userId                 String                   @map("user_id")
+  lastReadMessageId      String?                  @map("last_read_message_id")
+  lastDeliveredMessageId String?                  @map("last_delivered_message_id")
+  conversation           Conversation             @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user                   User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastReadMessage        Message?                 @relation("participant_last_read", fields: [lastReadMessageId], references: [id], onDelete: SetNull)
+  lastDeliveredMessage   Message?                 @relation("participant_last_delivered", fields: [lastDeliveredMessageId], references: [id], onDelete: SetNull)
 
-  @@unique([conversationId, userId])
+  @@id([conversationId, userId])
   @@index([userId])
-  @@map("conversation_participants")
+  @@map("participants")
 }
 
 model Message {
-  id           String            @id @default(uuid())
-  conversationId String          @map("conversation_id")
-  tenantId     String            @map("tenant_id")
-  senderId     String            @map("sender_id")
-  type         MessageType
-  content      String
-  deletedAt    DateTime?         @map("deleted_at")
-  createdAt    DateTime          @default(now()) @map("created_at")
-  conversation Conversation      @relation(fields: [conversationId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  tenant       Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  sender       User              @relation("message_sender", fields: [senderId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  reactions    MessageReaction[]
-  deliveredReceipts DeliveryReceipt[]
-  readReceipts ReadReceipt[]
+  id                          String                    @id @default(uuid())
+  senderId                    String                    @map("sender_id")
+  conversationId              String                    @map("conversation_id")
+  replyToMessageId            String?                   @map("reply_to_message_id")
+  content                     String
+  messageType                 String                    @map("message_type")
+  deliveredAt                 DateTime?                 @map("delivered_at")
+  readAt                      DateTime?                 @map("read_at")
+  createdAt                   DateTime                  @default(now()) @map("created_at")
+  deletedAt                   DateTime?                 @map("deleted_at")
+  conversation                Conversation              @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender                      User                      @relation("message_sender", fields: [senderId], references: [id], onDelete: Cascade)
+  replyToMessage              Message?                  @relation("message_replies", fields: [replyToMessageId], references: [id], onDelete: SetNull)
+  replies                     Message[]                 @relation("message_replies")
+  attachments                 Attachment[]
+  reactions                   Reaction[]
+  lastReadByParticipants      ConversationParticipant[] @relation("participant_last_read")
+  lastDeliveredByParticipants ConversationParticipant[] @relation("participant_last_delivered")
 
-  @@index([tenantId, conversationId, createdAt])
+  @@index([conversationId, createdAt])
+  @@index([replyToMessageId])
   @@index([senderId])
   @@index([deletedAt])
   @@map("messages")
 }
 
-model MessageReaction {
-  id           String   @id @default(uuid())
-  messageId    String   @map("message_id")
-  userId       String   @map("user_id")
-  reactionType String   @map("reaction_type")
-  message      Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([messageId, userId])
-  @@index([userId])
-  @@map("message_reactions")
-}
-
-model ReadReceipt {
+model Reaction {
   id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
   messageId String   @map("message_id")
   userId    String   @map("user_id")
-  readAt    DateTime @map("read_at")
+  emoji     String
+  createdAt DateTime @default(now()) @map("created_at")
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([messageId, userId])
+  @@unique([messageId, userId, emoji])
+  @@index([tenantId])
+  @@index([messageId])
   @@index([userId])
-  @@map("read_receipts")
+  @@map("reactions")
 }
 
-model DeliveryReceipt {
-  id          String   @id @default(uuid())
-  messageId   String   @map("message_id")
-  userId      String   @map("user_id")
-  deliveredAt DateTime @map("delivered_at")
-  message     Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+model Attachment {
+  id        String   @id @default(uuid())
+  messageId String   @map("message_id")
+  fileUrl   String   @map("file_url")
+  fileType  String   @map("file_type")
+  fileSize  BigInt   @map("file_size")
+  duration  Int?
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
 
-  @@unique([messageId, userId])
-  @@index([userId])
-  @@map("delivery_receipts")
+  @@index([messageId])
+  @@map("attachments")
 }

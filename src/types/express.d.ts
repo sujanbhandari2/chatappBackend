@@ -3,8 +3,9 @@ import { PrismaClient } from '@prisma/client';
 export interface AuthUser {
   id: string;
   tenantId: string;
-  role: 'CLIENT' | 'AGENT' | 'ADMIN';
-  username: string;
+  name: string;
+  email: string;
+  status: string;
 }
 
 declare global {

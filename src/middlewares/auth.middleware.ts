@@ -1,8 +1,9 @@
 import { NextFunction, Request, Response } from 'express';
 import { prisma } from '../config/prisma';
 import { verifyToken } from '../utils/jwt';
-import { ApiError } from '../utils/api-error';
 import { runWithTenantContext } from '../utils/tenant-context';
+import { resolveAuthIdentity, syncAuthIdentity } from '../services/auth-identity-sync.service';
+import { ApiError } from '../utils/api-error';
 
 const extractToken = (authorizationHeader?: string): string => {
   if (!authorizationHeader) {
@@ -18,25 +19,27 @@ const extractToken = (authorizationHeader?: string): string => {
   return token;
 };
 
-export const authenticate = (req: Request, _res: Response, next: NextFunction): void => {
+export const authenticate = async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
   try {
     const token = extractToken(req.headers.authorization);
     const payload = verifyToken(token);
+    const identity = resolveAuthIdentity(payload);
+    await syncAuthIdentity(identity);
 
     req.user = {
-      id: payload.userId,
-      tenantId: payload.tenantId,
-      role: payload.role,
-      username: payload.username
+      id: identity.userId,
+      tenantId: identity.tenantId,
+      name: identity.name,
+      email: identity.email,
+      status: identity.status
     };
 
     req.prisma = prisma;
 
     runWithTenantContext(
       {
-        tenantId: payload.tenantId,
-        userId: payload.userId,
-        role: payload.role
+        tenantId: identity.tenantId,
+        userId: identity.userId
       },
       () => next()
     );

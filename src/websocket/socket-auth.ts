@@ -1,14 +1,16 @@
 import { Socket } from 'socket.io';
 import { verifyToken } from '../utils/jwt';
+import { resolveAuthIdentity, syncAuthIdentity } from '../services/auth-identity-sync.service';
 
 export interface SocketUserContext {
   userId: string;
   tenantId: string;
-  role: 'CLIENT' | 'AGENT' | 'ADMIN';
-  username: string;
+  name: string;
+  email: string;
+  status: string;
 }
 
-export const extractSocketUser = (socket: Socket): SocketUserContext => {
+export const extractSocketUser = async (socket: Socket): Promise<SocketUserContext> => {
   const authToken = socket.handshake.auth?.token as string | undefined;
   const headerToken = socket.handshake.headers.authorization?.replace('Bearer ', '');
   const rawToken = authToken || headerToken;
@@ -18,11 +20,14 @@ export const extractSocketUser = (socket: Socket): SocketUserContext => {
   }
 
   const payload = verifyToken(rawToken);
+  const identity = resolveAuthIdentity(payload);
+  await syncAuthIdentity(identity);
 
   return {
-    userId: payload.userId,
-    tenantId: payload.tenantId,
-    role: payload.role,
-    username: payload.username
+    userId: identity.userId,
+    tenantId: identity.tenantId,
+    name: identity.name,
+    email: identity.email,
+    status: identity.status
   };
 };

@@ -54,22 +54,24 @@ describe('Chat WebSocket events', () => {
 
   it('sends, delivers, reads, and deletes messages', async () => {
     const tenant = await createTenant('Socket Org');
-    const agent = await createUser({ tenantId: tenant.id, email: 'agent@socket.com', role: 'AGENT' });
-    const client = await createUser({ tenantId: tenant.id, email: 'client@socket.com', role: 'CLIENT' });
+    const agent = await createUser({ tenantId: tenant.id, email: 'agent@socket.com' });
+    const client = await createUser({ tenantId: tenant.id, email: 'client@socket.com' });
     const conversation = await createConversation(tenant.id, [agent.id, client.id]);
 
     const agentToken = signUserToken({
       userId: agent.id,
       tenantId: tenant.id,
-      role: agent.role,
-      username: agent.username
+      name: agent.name ?? 'Agent',
+      email: agent.email,
+      status: agent.status ?? 'ACTIVE'
     });
 
     const clientToken = signUserToken({
       userId: client.id,
       tenantId: tenant.id,
-      role: client.role,
-      username: client.username
+      name: client.name ?? 'Client',
+      email: client.email,
+      status: client.status ?? 'ACTIVE'
     });
 
     const agentSocket = createClient(baseUrl, { auth: { token: agentToken }, transports: ['websocket'] });
@@ -89,15 +91,6 @@ describe('Chat WebSocket events', () => {
 
     const messageReceived = await messageReceivedPromise;
     expect(messageReceived.id).toBe(sentMessage.id);
-
-    const reactionPromise = waitForEvent<any>(agentSocket, 'message_reacted');
-    await emitAck(clientSocket, 'react_to_message', {
-      messageId: sentMessage.id,
-      reactionType: '👍'
-    });
-
-    const reaction = await reactionPromise;
-    expect(reaction.messageId).toBe(sentMessage.id);
 
     const deliveredPromise = waitForEvent<any>(agentSocket, 'message_delivered');
     await emitAck(clientSocket, 'mark_as_delivered', { messageId: sentMessage.id });

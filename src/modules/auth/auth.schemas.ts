@@ -1,19 +1,17 @@
 import { z } from 'zod';
 
-const usernameSchema = z
-  .string()
-  .min(3)
-  .max(30)
-  .regex(/^[a-zA-Z0-9_]+$/, 'username can include only letters, numbers, and underscore');
-
-const passwordSchema = z.string().min(8).max(128);
+const nameSchema = z.string().min(1).max(120);
+const emailSchema = z.string().email();
+const statusSchema = z.string().min(1).max(64).default('ACTIVE');
 
 export const registerSchema = z.object({
-  username: usernameSchema,
-  password: passwordSchema
+  tenantId: z.string().uuid().optional(),
+  name: nameSchema,
+  email: emailSchema,
+  status: statusSchema.optional()
 });
 
 export const loginSchema = z.object({
-  username: usernameSchema,
-  password: passwordSchema
+  tenantId: z.string().uuid(),
+  email: emailSchema
 });

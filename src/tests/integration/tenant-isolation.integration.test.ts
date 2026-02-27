@@ -9,8 +9,8 @@ describe('Tenant Isolation Integration', () => {
     const tenantA = await createTenant('Org A');
     const tenantB = await createTenant('Org B');
 
-    const userA = await createUser({ tenantId: tenantA.id, email: 'agent@orga.com', role: 'AGENT' });
-    const userB = await createUser({ tenantId: tenantB.id, email: 'agent@orgb.com', role: 'AGENT' });
+    const userA = await createUser({ tenantId: tenantA.id, email: 'agent@orga.com' });
+    const userB = await createUser({ tenantId: tenantB.id, email: 'agent@orgb.com' });
 
     const conversationA = await createConversation(tenantA.id, [userA.id]);
     await createConversation(tenantB.id, [userB.id]);
@@ -18,8 +18,9 @@ describe('Tenant Isolation Integration', () => {
     const tokenA = signUserToken({
       userId: userA.id,
       tenantId: tenantA.id,
-      role: userA.role,
-      username: userA.username
+      name: userA.name ?? 'Agent A',
+      email: userA.email,
+      status: userA.status ?? 'ACTIVE'
     });
 
     const response = await request(app)

@@ -1,14 +1,19 @@
 import { PrismaClient } from '@prisma/client';
 import { getTenantContext } from '../utils/tenant-context';
 
-const tenantScopedModels = new Set(['User', 'Conversation', 'Message']);
+const tenantScopedModels = new Set(['User', 'Conversation', 'Message', 'Reaction']);
 
-const addTenantWhere = (args: Record<string, unknown> | undefined, tenantId: string): Record<string, unknown> => {
+const addTenantWhere = (
+  args: Record<string, unknown> | undefined,
+  tenantId: string,
+  model: string
+): Record<string, unknown> => {
   const existingWhere = (args?.where as Record<string, unknown> | undefined) ?? undefined;
+  const tenantScope = model === 'Message' ? { conversation: { tenantId } } : { tenantId };
 
   return {
     ...(args ?? {}),
-    where: existingWhere ? { AND: [existingWhere, { tenantId }] } : { tenantId }
+    where: existingWhere ? { AND: [existingWhere, tenantScope] } : tenantScope
   };
 };
 
@@ -24,11 +29,11 @@ prisma.$use(async (params, next) => {
   switch (params.action) {
     case 'findUnique':
       params.action = 'findFirst';
-      params.args = addTenantWhere(params.args as Record<string, unknown>, tenantId);
+      params.args = addTenantWhere(params.args as Record<string, unknown>, tenantId, params.model);
       break;
     case 'findUniqueOrThrow':
       params.action = 'findFirstOrThrow';
-      params.args = addTenantWhere(params.args as Record<string, unknown>, tenantId);
+      params.args = addTenantWhere(params.args as Record<string, unknown>, tenantId, params.model);
       break;
     case 'findFirst':
     case 'findFirstOrThrow':
@@ -38,9 +43,12 @@ prisma.$use(async (params, next) => {
     case 'groupBy':
     case 'updateMany':
     case 'deleteMany':
-      params.args = addTenantWhere(params.args as Record<string, unknown>, tenantId);
+      params.args = addTenantWhere(params.args as Record<string, unknown>, tenantId, params.model);
       break;
     case 'create': {
+      if (params.model === 'Message') {
+        break;
+      }
       params.args = {
         ...(params.args as Record<string, unknown>),
         data: {
@@ -51,6 +59,9 @@ prisma.$use(async (params, next) => {
       break;
     }
     case 'createMany': {
+      if (params.model === 'Message') {
+        break;
+      }
       const original = (params.args as Record<string, any>)?.data;
       const data = Array.isArray(original)
         ? original.map((item) => ({ ...item, tenantId }))
@@ -63,6 +74,9 @@ prisma.$use(async (params, next) => {
       break;
     }
     case 'upsert': {
+      if (params.model === 'Message') {
+        break;
+      }
       params.args = {
         ...(params.args as Record<string, unknown>),
         create: {

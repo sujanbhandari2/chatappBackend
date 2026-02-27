@@ -1,12 +1,12 @@
-import { MessageType } from '@prisma/client';
 import { Server, Socket } from 'socket.io';
 import { z } from 'zod';
 import * as chatService from '../modules/chat/chat.service';
 import {
+  addReactionSchema,
   markAsDeliveredSchema,
   deleteMessageSchema,
   markAsReadSchema,
-  reactToMessageSchema,
+  removeReactionSchema,
   sendMessageSchema
 } from '../modules/chat/chat.schemas';
 import { runWithTenantContext } from '../utils/tenant-context';
@@ -30,8 +30,7 @@ const withSocketContext = (
     runWithTenantContext(
       {
         tenantId: user.tenantId,
-        userId: user.userId,
-        role: user.role
+        userId: user.userId
       },
       () => {
         handler(payload, ack).catch((error: Error) => {
@@ -55,8 +54,7 @@ export const registerChatGateway = (io: Server, socket: Socket, user: SocketUser
       const hasAccess = await chatService.hasConversationAccess(
         {
           tenantId: user.tenantId,
-          userId: user.userId,
-          role: user.role
+          userId: user.userId
         },
         conversationId
       );
@@ -75,38 +73,22 @@ export const registerChatGateway = (io: Server, socket: Socket, user: SocketUser
     withSocketContext(user, socket, async (payload, ack) => {
       const parsed = sendMessageSchema.parse(payload) as {
         conversationId: string;
-        type: MessageType;
+        type: 'TEXT' | 'IMAGE' | 'VOICE';
         content: string;
+        replyToMessageId?: string;
       };
 
       const message = await chatService.sendMessage({
         tenantId: user.tenantId,
         userId: user.userId,
-        role: user.role,
         conversationId: parsed.conversationId,
         type: parsed.type,
-        content: parsed.content
+        content: parsed.content,
+        replyToMessageId: parsed.replyToMessageId
       });
 
       io.to(roomName(user.tenantId, parsed.conversationId)).emit('message_received', message);
       ack?.({ ok: true, data: message });
-    })
-  );
-
-  socket.on(
-    'react_to_message',
-    withSocketContext(user, socket, async (payload, ack) => {
-      const parsed = reactToMessageSchema.parse(payload);
-      const reaction = await chatService.reactToMessage({
-        tenantId: user.tenantId,
-        userId: user.userId,
-        role: user.role,
-        messageId: parsed.messageId,
-        reactionType: parsed.reactionType
-      });
-
-      io.to(roomName(user.tenantId, reaction.conversationId)).emit('message_reacted', reaction);
-      ack?.({ ok: true, data: reaction });
     })
   );
 
@@ -117,12 +99,43 @@ export const registerChatGateway = (io: Server, socket: Socket, user: SocketUser
       const deleted = await chatService.deleteMessage({
         tenantId: user.tenantId,
         userId: user.userId,
-        role: user.role,
         messageId: parsed.messageId
       });
 
       io.to(roomName(user.tenantId, deleted.conversationId)).emit('message_deleted', deleted);
       ack?.({ ok: true, data: deleted });
+    })
+  );
+
+  socket.on(
+    'add_reaction',
+    withSocketContext(user, socket, async (payload, ack) => {
+      const parsed = addReactionSchema.parse(payload);
+      const reactionState = await chatService.addReaction({
+        tenantId: user.tenantId,
+        userId: user.userId,
+        messageId: parsed.messageId,
+        emoji: parsed.emoji
+      });
+
+      io.to(roomName(user.tenantId, reactionState.conversationId)).emit('reaction_updated', reactionState);
+      ack?.({ ok: true, data: reactionState });
+    })
+  );
+
+  socket.on(
+    'remove_reaction',
+    withSocketContext(user, socket, async (payload, ack) => {
+      const parsed = removeReactionSchema.parse(payload);
+      const reactionState = await chatService.removeReaction({
+        tenantId: user.tenantId,
+        userId: user.userId,
+        messageId: parsed.messageId,
+        emoji: parsed.emoji
+      });
+
+      io.to(roomName(user.tenantId, reactionState.conversationId)).emit('reaction_updated', reactionState);
+      ack?.({ ok: true, data: reactionState });
     })
   );
 
@@ -133,7 +146,6 @@ export const registerChatGateway = (io: Server, socket: Socket, user: SocketUser
       const receipt = await chatService.markAsDelivered({
         tenantId: user.tenantId,
         userId: user.userId,
-        role: user.role,
         messageId: parsed.messageId
       });
 
@@ -149,7 +161,6 @@ export const registerChatGateway = (io: Server, socket: Socket, user: SocketUser
       const receipt = await chatService.markAsRead({
         tenantId: user.tenantId,
         userId: user.userId,
-        role: user.role,
         messageId: parsed.messageId
       });
 

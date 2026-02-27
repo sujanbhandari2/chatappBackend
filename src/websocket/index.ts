@@ -25,9 +25,9 @@ export const initializeSocketServer = async (server: http.Server): Promise<Serve
     io.adapter(createAdapter(pubClient, subClient));
   }
 
-  io.use((socket, next) => {
+  io.use(async (socket, next) => {
     try {
-      const user = extractSocketUser(socket);
+      const user = await extractSocketUser(socket);
       socket.data.user = user;
       next();
     } catch (error) {

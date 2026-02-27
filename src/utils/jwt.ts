@@ -2,10 +2,13 @@ import jwt, { SignOptions } from 'jsonwebtoken';
 import { env } from '../config/env';
 
 export interface JwtPayload {
-  userId: string;
+  userId?: string;
+  sub?: string;
   tenantId: string;
-  role: 'CLIENT' | 'AGENT' | 'ADMIN';
-  username: string;
+  name?: string;
+  email?: string;
+  status?: string;
+  [key: string]: unknown;
 }
 
 export const signToken = (payload: JwtPayload): string => {
