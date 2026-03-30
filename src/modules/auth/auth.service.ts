@@ -74,7 +74,7 @@ const formatAuthResponse = (user: {
   };
 };
 
-export const register = async (input: RegisterInput) => {
+export const create = async (input: RegisterInput) => {
   const normalizedEmail = input.email.trim().toLowerCase();
   const normalizedName = input.name.trim();
   const normalizedStatus = input.status?.trim() || 'ACTIVE';
@@ -107,30 +107,6 @@ export const register = async (input: RegisterInput) => {
       status: true
     }
   });
-
-  return formatAuthResponse(user);
-};
-
-export const login = async (input: LoginInput) => {
-  const normalizedEmail = input.email.trim().toLowerCase();
-
-  const user = await prisma.user.findFirst({
-    where: {
-      tenantId: input.tenantId,
-      email: normalizedEmail
-    },
-    select: {
-      id: true,
-      tenantId: true,
-      name: true,
-      email: true,
-      status: true
-    }
-  });
-
-  if (!user) {
-    throw new ApiError(401, 'Invalid credentials');
-  }
 
   return formatAuthResponse(user);
 };
