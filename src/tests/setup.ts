@@ -17,6 +17,7 @@ beforeEach(async () => {
   await prisma.$executeRawUnsafe(`
     TRUNCATE TABLE
       attachments,
+      audio_transcriptions,
       messages,
       participants,
       conversations,

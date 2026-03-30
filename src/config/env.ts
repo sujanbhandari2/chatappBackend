@@ -28,7 +28,22 @@ const envSchema = z.object({
   MESSAGE_ENCRYPTION_KEY: z.string().default(''),
   FIREBASE_PROJECT_ID: z.string().default(''),
   FIREBASE_CLIENT_EMAIL: z.string().default(''),
-  FIREBASE_PRIVATE_KEY: z.string().default('')
+  FIREBASE_PRIVATE_KEY: z.string().default(''),
+  /** Bearer token for OpenAI-compatible speech-to-text (Whisper) and optional text translation */
+  OPENAI_API_KEY: z.string().default(''),
+  OPENAI_TRANSCRIPTION_URL: z
+    .string()
+    .url()
+    .default('https://api.openai.com/v1/audio/transcriptions'),
+  OPENAI_CHAT_COMPLETIONS_URL: z
+    .string()
+    .url()
+    .default('https://api.openai.com/v1/chat/completions'),
+  OPENAI_TRANSLATION_MODEL: z.string().default('gpt-4o-mini'),
+  /** Set to `gemini` to translate via Gemini REST; otherwise uses OpenAI chat completions */
+  TRANSLATION_PROVIDER: z.enum(['openai', 'gemini']).default('openai'),
+  GEMINI_API_KEY: z.string().default(''),
+  GEMINI_TRANSLATION_MODEL: z.string().default('gemini-2.0-flash')
 });
 
 const parsed = envSchema.safeParse(process.env);
