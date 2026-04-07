@@ -10,18 +10,65 @@ const bootstrap = async (): Promise<void> => {
 
   const app = createApp();
   const httpServer = http.createServer(app);
-  await initializeSocketServer(httpServer);
+  const io = await initializeSocketServer(httpServer);
 
   httpServer.listen(env.PORT, () => {
-    logger.info(`Backend listening on port ${env.PORT}`);
+    const url = `http://localhost:${env.PORT}`;
+    console.log(`Server is running at ${url}`);
+    console.log(`Socket server is running at ${url.replace('http', 'ws')}`);
   });
 
-  const shutdown = async (): Promise<void> => {
-    logger.info('Shutting down backend');
-    httpServer.close(async () => {
-      await prisma.$disconnect();
+  let shutdownStarted = false;
+  let shutdownDone = false;
+  let forceTimeout: ReturnType<typeof setTimeout> | undefined;
+
+  const finishShutdown = (): void => {
+    if (shutdownDone) {
+      return;
+    }
+    shutdownDone = true;
+    if (forceTimeout !== undefined) {
+      clearTimeout(forceTimeout);
+      forceTimeout = undefined;
+    }
+    void prisma.$disconnect().finally(() => {
       process.exit(0);
     });
+  };
+
+  const shutdown = (): void => {
+    if (shutdownStarted) {
+      if (!shutdownDone) {
+        logger.warn('Repeat shutdown signal; forcing exit');
+        if (typeof httpServer.closeAllConnections === 'function') {
+          httpServer.closeAllConnections();
+        }
+        finishShutdown();
+      }
+      return;
+    }
+    shutdownStarted = true;
+
+    logger.info('Shutting down backend');
+    // Close Socket.IO first; otherwise open WebSockets keep httpServer.close() from finishing
+    // and node --watch hangs on "Waiting for graceful termination..."
+    io.close(() => {
+      httpServer.close(() => {
+        finishShutdown();
+      });
+    });
+
+    const forceMs = env.NODE_ENV === 'development' ? 2000 : 15000;
+    forceTimeout = setTimeout(() => {
+      if (shutdownDone) {
+        return;
+      }
+      logger.warn('Shutdown taking too long; forcing connection close');
+      if (typeof httpServer.closeAllConnections === 'function') {
+        httpServer.closeAllConnections();
+      }
+      finishShutdown();
+    }, forceMs);
   };
 
   process.on('SIGINT', shutdown);

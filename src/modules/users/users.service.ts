@@ -3,9 +3,9 @@ import { isUserOnline } from '../../services/presence.service';
 
 interface ListUsersInput {
   tenantId: string;
-  requesterId: string;
 }
 
+/** All users in the same tenant (tenant isolation). */
 export const listUsers = async (input: ListUsersInput) => {
   const users = await prisma.user.findMany({
     where: {

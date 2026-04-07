@@ -1,0 +1,686 @@
+openapi: 3.0.3
+info:
+  title: Healthcare Chat Backend API
+  version: 1.0.0
+  description: |
+    REST API for auth, users, chat metadata, uploads, and speech helpers.
+
+    **WebSocket (Socket.IO)** on the same host/port as HTTP: authenticate with JWT via
+    `handshake.auth.token` (string) or `Authorization: Bearer <token>` header.
+    Events: `join_conversation`, `send_message`, `delete_message`, `add_reaction`,
+    `remove_reaction`, `mark_as_delivered`, `mark_as_read`. Server emits e.g.
+    `message_received`, `message_deleted`, `reaction_updated`, `message_delivered`, `message_read`.
+
+servers:
+  - url: http://localhost:4000
+    description: Local
+
+tags:
+  - name: System
+  - name: Auth
+  - name: Users
+  - name: Chat
+  - name: Speech
+
+paths:
+  /health:
+    get:
+      tags: [System]
+      summary: Liveness check
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /api/auth/create:
+    post:
+      tags: [Auth]
+      summary: Register user (same as /api/auth/register)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Created; returns JWT
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          description: Email already exists in tenant
+
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register user (alias of /create)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login with tenant + email (no password)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Invalid credentials
+
+  /api/users:
+    get:
+      tags: [Users]
+      summary: List users in the same tenant as the JWT
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/UserListItem'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/conversations:
+    get:
+      tags: [Chat]
+      summary: List conversations for current user
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Conversation'
+    post:
+      tags: [Chat]
+      summary: Create group conversation (type GROUP; creator merged into participants)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateConversationBody'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+
+  /api/conversations/direct:
+    post:
+      tags: [Chat]
+      summary: Create or get direct (1:1) conversation
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId]
+              properties:
+                userId:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+
+  /api/conversations/group:
+    post:
+      tags: [Chat]
+      summary: Create group chat with title
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGroupBody'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+
+  /api/groups:
+    post:
+      tags: [Chat]
+      summary: Alias for POST /api/conversations/group
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGroupBody'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+
+  /api/messages/{messageId}/reactions:
+    post:
+      tags: [Chat]
+      summary: Add or keep a reaction on a message (idempotent per user+emoji)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: messageId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [emoji]
+              properties:
+                emoji:
+                  type: string
+                  minLength: 1
+                  maxLength: 32
+      responses:
+        '200':
+          description: Updated reaction list for the message
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      messageId:
+                        type: string
+                      conversationId:
+                        type: string
+                      reactions:
+                        type: array
+                        items:
+                          type: object
+    delete:
+      tags: [Chat]
+      summary: Remove current user's reaction (emoji) from a message
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: messageId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: emoji
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 32
+          description: URL-encode non-ASCII emoji (e.g. encodeURIComponent)
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+
+  /api/conversations/{id}:
+    delete:
+      tags: [Chat]
+      summary: Delete conversation (cascades messages, participants, reactions)
+      description: |
+        **GROUP:** only `createdBy` may delete. **DIRECT** (and other types): any participant may delete.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+        '403':
+          description: Not group creator or not a participant
+        '404':
+          description: Conversation not found
+
+  /api/conversations/{id}/messages:
+    get:
+      tags: [Chat]
+      summary: Paginated messages for a conversation
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Messages oldest→newest in `data` for the page
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Message'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+  /api/conversations/{id}/messages/upload:
+    post:
+      tags: [Chat]
+      summary: Upload image or asset to S3 and create a message
+      description: |
+        Stores the **S3 object key** (encrypted) as `content`. `messageType` is **VOICE** for `audio/*`,
+        otherwise **IMAGE** (including other assets such as video or PDF so clients can use the signed URL).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Conversation id
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                replyToMessageId:
+                  type: string
+                  format: uuid
+                  description: Optional parent message when replying
+      responses:
+        '201':
+          description: Created message; `content` is a signed URL for this response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Message'
+        '500':
+          description: S3 not configured
+
+  /api/upload:
+    post:
+      tags: [Chat]
+      summary: Upload file (e.g. for IMAGE/VOICE message content)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url:
+                    type: string
+                  key:
+                    type: string
+                  mimeType:
+                    type: string
+                  mimetype:
+                    type: string
+                  size:
+                    type: integer
+
+  /api/speech/transcribe:
+    post:
+      tags: [Speech]
+      summary: Transcribe audio (OpenAI Whisper when configured)
+      security:
+        - bearerAuth: []
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [audio]
+              properties:
+                audio:
+                  type: string
+                  format: binary
+                language:
+                  type: string
+                  description: Optional BCP-47 / language hint (min 2 chars when set)
+                processAgain:
+                  type: string
+                  description: 'truthy: true, 1, yes (also accepted as query param)'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      text:
+                        type: string
+                      fromCache:
+                        type: boolean
+        '503':
+          description: OPENAI_API_KEY missing
+
+  /api/speech/translate:
+    post:
+      tags: [Speech]
+      summary: Translate text (OpenAI or Gemini per env)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TranslateRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      translatedText:
+                        type: string
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid Bearer token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorBody'
+    ValidationError:
+      description: Zod validation failed
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+                example: Validation failed
+              details:
+                description: Present in non-production for ApiError
+
+  schemas:
+    ErrorBody:
+      type: object
+      properties:
+        message:
+          type: string
+        details: {}
+
+    RegisterRequest:
+      type: object
+      required: [name, email]
+      properties:
+        tenantId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Optional; omit for default tenant. Any string id (e.g. slug) is accepted.
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        email:
+          type: string
+          format: email
+        status:
+          type: string
+          minLength: 1
+          maxLength: 64
+
+    LoginRequest:
+      type: object
+      required: [tenantId, email]
+      properties:
+        tenantId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        email:
+          type: string
+          format: email
+
+    AuthResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        user:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+              nullable: true
+            email:
+              type: string
+            tenantId:
+              type: string
+            status:
+              type: string
+              nullable: true
+
+    UserListItem:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        name:
+          type: string
+          nullable: true
+        email:
+          type: string
+        avatarUrl:
+          type: string
+          nullable: true
+        status:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        isOnline:
+          type: boolean
+
+    CreateConversationBody:
+      type: object
+      required: [participantIds]
+      properties:
+        participantIds:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            format: uuid
+
+    CreateGroupBody:
+      type: object
+      required: [title, participantIds]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        participantIds:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            format: uuid
+          description: Other members; caller is always included server-side
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+        totalPages:
+          type: integer
+
+    Conversation:
+      type: object
+      description: Prisma-shaped conversation with participants[].user
+      additionalProperties: true
+
+    Message:
+      type: object
+      description: Message with attachments, reactions, optional replyToMessage; content may be decrypted text or signed URL
+      additionalProperties: true
+
+    TranslateRequest:
+      type: object
+      required: [text, targetLanguage]
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 100000
+        targetLanguage:
+          type: string
+          minLength: 2
+          maxLength: 64
+        sourceLanguage:
+          type: string
+          minLength: 2
+          maxLength: 64

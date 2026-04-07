@@ -10,11 +10,20 @@ export const createDirectConversationSchema = z.object({
 
 export const createGroupConversationSchema = z.object({
   title: z.string().min(1).max(120),
-  participantIds: z.array(z.string().uuid()).min(2)
+  /** Other members (UUIDs); the authenticated user is always added. Min 1 → at least 2 people in the group. */
+  participantIds: z.array(z.string().uuid()).min(1)
 });
 
 export const conversationParamsSchema = z.object({
   id: z.string().uuid()
+});
+
+/** Multipart text fields after multer for POST .../messages/upload */
+export const uploadMessageFormSchema = z.object({
+  replyToMessageId: z
+    .union([z.string().uuid(), z.literal('')])
+    .optional()
+    .transform((v) => (v === '' || v === undefined ? undefined : v))
 });
 
 export const messagePaginationQuerySchema = z.object({
@@ -47,3 +56,18 @@ export const addReactionSchema = z.object({
 });
 
 export const removeReactionSchema = addReactionSchema;
+
+/** Path param for POST/DELETE /messages/:messageId/reactions */
+export const messageIdParamSchema = z.object({
+  messageId: z.string().uuid()
+});
+
+/** Body for POST /messages/:messageId/reactions */
+export const reactionEmojiBodySchema = z.object({
+  emoji: z.string().min(1).max(32)
+});
+
+/** Query for DELETE /messages/:messageId/reactions?emoji= */
+export const reactionEmojiQuerySchema = z.object({
+  emoji: z.string().min(1).max(32)
+});

@@ -8,10 +8,7 @@ export const listUsers = async (req: Request, res: Response, next: NextFunction)
       throw new ApiError(401, 'Unauthorized');
     }
 
-    const users = await usersService.listUsers({
-      tenantId: req.user.tenantId,
-      requesterId: req.user.id
-    });
+    const users = await usersService.listUsers({ tenantId: req.user.tenantId });
 
     res.status(200).json({ data: users });
   } catch (error) {

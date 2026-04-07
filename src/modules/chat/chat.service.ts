@@ -1,7 +1,7 @@
 import { prisma } from '../../config/prisma';
 import { ApiError } from '../../utils/api-error';
 import { triggerPushNotification } from '../../services/push-notification.service';
-import { getSignedFileUrl } from '../../services/file-storage.service';
+import { getSignedFileUrl, uploadFileToS3 } from '../../services/file-storage.service';
 import { decryptMessageContent, encryptMessageContent } from '../../utils/message-crypto';
 import { logger } from '../../config/logger';
 
@@ -63,6 +63,18 @@ interface RemoveReactionInput extends AuthContext {
 }
 
 const isAssetMessage = (type: string): boolean => type === 'IMAGE' || type === 'VOICE';
+
+/** S3 key is stored in DB; clients receive fresh signed URLs when messages are loaded. */
+const deriveAssetMessageType = (mimetype: string): MessageKind => {
+  const m = (mimetype || '').trim().toLowerCase();
+  if (m.startsWith('audio/')) {
+    return 'VOICE';
+  }
+  if (m.startsWith('image/')) {
+    return 'IMAGE';
+  }
+  return 'IMAGE';
+};
 
 const reactionInclude = {
   user: {
@@ -490,6 +502,35 @@ export const sendMessage = async (input: SendMessageInput) => {
   return resolveMessageReplyForOutput(message, input.tenantId);
 };
 
+export const uploadAndSendAssetMessage = async (input: {
+  tenantId: string;
+  userId: string;
+  conversationId: string;
+  buffer: Buffer;
+  mimetype: string;
+  originalName: string;
+  replyToMessageId?: string;
+}) => {
+  const { key } = await uploadFileToS3({
+    buffer: input.buffer,
+    mimetype: input.mimetype,
+    originalName: input.originalName,
+    tenantId: input.tenantId,
+    userId: input.userId
+  });
+
+  const type = deriveAssetMessageType(input.mimetype);
+
+  return sendMessage({
+    tenantId: input.tenantId,
+    userId: input.userId,
+    conversationId: input.conversationId,
+    type,
+    content: key,
+    replyToMessageId: input.replyToMessageId
+  });
+};
+
 const getMessageReactions = async (messageId: string) => {
   return prisma.reaction.findMany({
     where: { messageId },
@@ -646,4 +687,29 @@ export const markAsDelivered = async (input: MarkAsDeliveredInput) => {
     deliveredAt: now,
     conversationId: message.conversationId
   };
+};
+
+export const deleteConversation = async (ctx: AuthContext, conversationId: string) => {
+  await assertConversationAccess(ctx, conversationId);
+
+  const conv = await prisma.conversation.findFirst({
+    where: { id: conversationId, tenantId: ctx.tenantId },
+    select: { id: true, type: true, createdBy: true }
+  });
+
+  if (!conv) {
+    throw new ApiError(404, 'Conversation not found');
+  }
+
+  if (conv.type === 'GROUP') {
+    if (!conv.createdBy || conv.createdBy !== ctx.userId) {
+      throw new ApiError(403, 'Only the group creator can delete this conversation');
+    }
+  }
+
+  await prisma.conversation.delete({
+    where: { id: conversationId }
+  });
+
+  return { id: conversationId };
 };

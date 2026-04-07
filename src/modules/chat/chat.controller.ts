@@ -45,6 +45,22 @@ export const getMessages = async (req: Request, res: Response, next: NextFunctio
   }
 };
 
+export const deleteConversation = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const user = getAuthContext(req);
+    const { id } = req.params;
+
+    const result = await chatService.deleteConversation(
+      { tenantId: user.tenantId, userId: user.id },
+      id
+    );
+
+    res.status(200).json({ data: result });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const createConversation = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const user = getAuthContext(req);
@@ -94,6 +110,75 @@ export const createGroupConversation = async (
     });
 
     res.status(201).json(conversation);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const addReaction = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const user = getAuthContext(req);
+    const { messageId } = req.params;
+    const { emoji } = req.body as { emoji: string };
+
+    const result = await chatService.addReaction({
+      tenantId: user.tenantId,
+      userId: user.id,
+      messageId,
+      emoji
+    });
+
+    res.status(200).json({ data: result });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const removeReaction = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const user = getAuthContext(req);
+    const { messageId } = req.params;
+    const { emoji } = req.query as { emoji: string };
+
+    const result = await chatService.removeReaction({
+      tenantId: user.tenantId,
+      userId: user.id,
+      messageId,
+      emoji
+    });
+
+    res.status(200).json({ data: result });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const uploadConversationMessage = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const user = getAuthContext(req);
+
+    if (!req.file) {
+      throw new ApiError(400, 'file is required (field name: file)');
+    }
+
+    const { id: conversationId } = req.params;
+    const body = req.body as { replyToMessageId?: string };
+
+    const message = await chatService.uploadAndSendAssetMessage({
+      tenantId: user.tenantId,
+      userId: user.id,
+      conversationId,
+      buffer: req.file.buffer,
+      mimetype: req.file.mimetype,
+      originalName: req.file.originalname,
+      replyToMessageId: body.replyToMessageId
+    });
+
+    res.status(201).json({ data: message });
   } catch (error) {
     next(error);
   }
