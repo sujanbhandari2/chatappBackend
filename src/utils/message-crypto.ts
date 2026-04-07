@@ -5,6 +5,11 @@ const ENCRYPTED_PREFIX = 'enc:v1:';
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12;
 
+/** Stored on `Message.contentEncryption` for new encrypted rows; use when decrypting. */
+export const MESSAGE_CONTENT_ENCRYPTION_ALGORITHM_ID = 'AES-256-GCM-v1' as const;
+
+export type MessageContentEncryptionAlgorithmId = typeof MESSAGE_CONTENT_ENCRYPTION_ALGORITHM_ID;
+
 interface EncryptedPayloadV1 {
   v: 1;
   iv: string;
@@ -46,11 +51,7 @@ export const encryptMessageContent = (content: string): string => {
   return `${ENCRYPTED_PREFIX}${encoded}`;
 };
 
-export const decryptMessageContent = (content: string): string => {
-  if (!content || !isEncryptedPayload(content)) {
-    return content;
-  }
-
+const decryptAes256GcmV1 = (content: string): string => {
   const encoded = content.slice(ENCRYPTED_PREFIX.length);
   const raw = Buffer.from(encoded, 'base64').toString('utf8');
   const payload = JSON.parse(raw) as EncryptedPayloadV1;
@@ -72,4 +73,22 @@ export const decryptMessageContent = (content: string): string => {
   ]);
 
   return plaintext.toString('utf8');
+};
+
+/**
+ * @param algorithmId Value from DB `content_encryption`; omit or null for legacy rows (still `enc:v1:` → AES-256-GCM-v1).
+ */
+export const decryptMessageContent = (content: string, algorithmId?: string | null): string => {
+  if (!content || !isEncryptedPayload(content)) {
+    return content;
+  }
+
+  const scheme =
+    algorithmId?.trim() || MESSAGE_CONTENT_ENCRYPTION_ALGORITHM_ID;
+
+  if (scheme === MESSAGE_CONTENT_ENCRYPTION_ALGORITHM_ID) {
+    return decryptAes256GcmV1(content);
+  }
+
+  throw new Error(`Unsupported message encryption algorithm: ${scheme}`);
 };

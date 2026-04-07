@@ -78,6 +78,8 @@ model Message {
   conversationId              String                    @map("conversation_id")
   replyToMessageId            String?                   @map("reply_to_message_id")
   content                     String
+  /// Algorithm id for encrypted `content` (e.g. AES-256-GCM-v1); null for legacy rows.
+  contentEncryption           String?                   @map("content_encryption")
   messageType                 String                    @map("message_type")
   deliveredAt                 DateTime?                 @map("delivered_at")
   readAt                      DateTime?                 @map("read_at")

@@ -1,9 +1,27 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 import { ApiError } from '../../utils/api-error';
 import { triggerPushNotification } from '../../services/push-notification.service';
 import { getSignedFileUrl, uploadFileToS3 } from '../../services/file-storage.service';
-import { decryptMessageContent, encryptMessageContent } from '../../utils/message-crypto';
+import {
+  decryptMessageContent,
+  encryptMessageContent,
+  isEncryptedPayload,
+  MESSAGE_CONTENT_ENCRYPTION_ALGORITHM_ID
+} from '../../utils/message-crypto';
 import { logger } from '../../config/logger';
+
+/**
+ * Fields needed to decrypt reply previews. Cast to `MessageSelect` so tooling matches the
+ * generated client after `npx prisma generate` (see `postinstall` in package.json).
+ */
+const replyToMessageSelect = {
+  id: true,
+  senderId: true,
+  content: true,
+  contentEncryption: true,
+  messageType: true
+} as Prisma.MessageSelect;
 
 type MessageKind = 'TEXT' | 'IMAGE' | 'VOICE';
 
@@ -104,12 +122,14 @@ const conversationInclude = {
   }
 } as const;
 
-const resolveMessageForOutput = async <T extends { id: string; content: string; messageType: string }>(
+const resolveMessageForOutput = async <
+  T extends { id: string; content: string; messageType: string; contentEncryption?: string | null }
+>(
   message: T,
   tenantId: string
 ): Promise<T> => {
   try {
-    const decryptedContent = decryptMessageContent(message.content);
+    const decryptedContent = decryptMessageContent(message.content, message.contentEncryption);
     const resolvedContent = isAssetMessage(message.messageType)
       ? await getSignedFileUrl(decryptedContent, tenantId)
       : decryptedContent;
@@ -135,7 +155,13 @@ const resolveMessageReplyForOutput = async <
     id: string;
     content: string;
     messageType: string;
-    replyToMessage?: { id: string; content: string; messageType: string } | null;
+    contentEncryption?: string | null;
+    replyToMessage?: {
+      id: string;
+      content: string;
+      messageType: string;
+      contentEncryption?: string | null;
+    } | null;
   }
 >(
   message: T,
@@ -247,12 +273,7 @@ export const getMessages = async (input: PaginatedMessagesInput) => {
       include: {
         attachments: true,
         replyToMessage: {
-          select: {
-            id: true,
-            senderId: true,
-            content: true,
-            messageType: true
-          }
+          select: replyToMessageSelect
         },
         reactions: {
           include: reactionInclude,
@@ -460,23 +481,24 @@ export const sendMessage = async (input: SendMessageInput) => {
     }
   }
 
+  const encryptedContent = encryptMessageContent(input.content);
+  const contentEncryption = isEncryptedPayload(encryptedContent)
+    ? MESSAGE_CONTENT_ENCRYPTION_ALGORITHM_ID
+    : null;
+
   const message = await prisma.message.create({
     data: {
       conversationId: input.conversationId,
       senderId: input.userId,
       messageType: input.type,
-      content: encryptMessageContent(input.content),
+      content: encryptedContent,
+      contentEncryption,
       replyToMessageId: input.replyToMessageId
-    },
+    } as Prisma.MessageUncheckedCreateInput,
     include: {
       attachments: true,
       replyToMessage: {
-        select: {
-          id: true,
-          senderId: true,
-          content: true,
-          messageType: true
-        }
+        select: replyToMessageSelect
       },
       reactions: {
         include: reactionInclude,
