@@ -9,9 +9,11 @@ import { registerChatGateway } from './chat.gateway';
 
 export const initializeSocketServer = async (server: http.Server): Promise<Server> => {
   const io = new Server(server, {
+    serveClient: false,
     cors: {
       origin: env.FRONTEND_ORIGIN,
-      credentials: true
+      credentials: true,
+      methods: ['GET', 'POST']
     }
   });
 
@@ -31,7 +33,9 @@ export const initializeSocketServer = async (server: http.Server): Promise<Serve
       socket.data.user = user;
       next();
     } catch (error) {
-      next(error as Error);
+      const message = error instanceof Error ? error.message : 'Unauthorized';
+      logger.warn('Socket handshake rejected', { reason: message });
+      next(new Error(message));
     }
   });
 
@@ -39,6 +43,7 @@ export const initializeSocketServer = async (server: http.Server): Promise<Serve
     const user = socket.data.user;
 
     if (!user) {
+      logger.warn('Socket connected without user context; disconnecting');
       socket.disconnect(true);
       return;
     }
