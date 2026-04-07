@@ -9,9 +9,13 @@ const hasS3Config =
   Boolean(env.AWS_SECRET_ACCESS_KEY) &&
   Boolean(env.AWS_S3_BUCKET);
 
+const s3Endpoint = env.AWS_S3_ENDPOINT.trim() || undefined;
+
 const s3Client = hasS3Config
   ? new S3Client({
       region: env.AWS_REGION,
+      ...(s3Endpoint ? { endpoint: s3Endpoint } : {}),
+      forcePathStyle: env.AWS_S3_FORCE_PATH_STYLE,
       credentials: {
         accessKeyId: env.AWS_ACCESS_KEY_ID,
         secretAccessKey: env.AWS_SECRET_ACCESS_KEY

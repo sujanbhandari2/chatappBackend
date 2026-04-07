@@ -23,6 +23,16 @@ const envSchema = z.object({
   AWS_ACCESS_KEY_ID: z.string().default(''),
   AWS_SECRET_ACCESS_KEY: z.string().default(''),
   AWS_S3_BUCKET: z.string().default(''),
+  /**
+   * Custom S3 API URL — use when AWS returns "must be addressed using the specified endpoint"
+   * (set to the regional endpoint URL from the error), or for MinIO/LocalStack (e.g. http://localhost:9000).
+   */
+  AWS_S3_ENDPOINT: z.string().default(''),
+  /** Set true for MinIO and some S3-compatible APIs (path-style URLs). */
+  AWS_S3_FORCE_PATH_STYLE: z
+    .string()
+    .default('')
+    .transform((s) => /^(1|true|yes)$/i.test(s.trim())),
   AWS_S3_SIGNED_URL_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(300),
   FRONTEND_ORIGIN: z.string().default('http://localhost:5173'),
   MESSAGE_ENCRYPTION_KEY: z.string().default(''),
