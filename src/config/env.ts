@@ -36,11 +36,10 @@ const envSchema = z.object({
   AWS_S3_SIGNED_URL_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(300),
   FRONTEND_ORIGIN: z.string().default('http://localhost:5173'),
   MESSAGE_ENCRYPTION_KEY: z.string().default(''),
-  FIREBASE_PROJECT_ID: z.string().default(''),
-  FIREBASE_CLIENT_EMAIL: z.string().default(''),
-  FIREBASE_PRIVATE_KEY: z.string().default(''),
-  /** Bearer token for OpenAI-compatible speech-to-text (Whisper) and optional text translation */
-  OPENAI_API_KEY: z.string().default(''),
+  /** Bearer token for OpenAI-compatible speech-to-text (Whisper) at OPENAI_TRANSCRIPTION_URL */
+  TRANSCRIBE_API_KEY: z.string().default(''),
+  /** Bearer token for OpenAI Chat Completions translation when TRANSLATION_PROVIDER=openai */
+  TRANSLATION_API_KEY: z.string().default(''),
   OPENAI_TRANSCRIPTION_URL: z
     .string()
     .url()
@@ -52,6 +51,7 @@ const envSchema = z.object({
   OPENAI_TRANSLATION_MODEL: z.string().default('gpt-4o-mini'),
   /** Set to `gemini` to translate via Gemini REST; otherwise uses OpenAI chat completions */
   TRANSLATION_PROVIDER: z.enum(['openai', 'gemini']).default('openai'),
+  
   GEMINI_API_KEY: z.string().default(''),
   GEMINI_TRANSLATION_MODEL: z.string().default('gemini-2.0-flash')
 });

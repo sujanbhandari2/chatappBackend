@@ -42,8 +42,8 @@ const transcribeViaUpstream = async (input: {
   mimeType: string;
   language?: string;
 }): Promise<{ text: string }> => {
-  if (!env.OPENAI_API_KEY) {
-    throw new ApiError(503, 'Transcription is not configured (OPENAI_API_KEY is missing)');
+  if (!env.TRANSCRIBE_API_KEY) {
+    throw new ApiError(503, 'Transcription is not configured (TRANSCRIBE_API_KEY is missing)');
   }
 
   const form = new FormData();
@@ -56,7 +56,7 @@ const transcribeViaUpstream = async (input: {
   const res = await fetch(env.OPENAI_TRANSCRIPTION_URL, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${env.OPENAI_API_KEY}`
+      Authorization: `Bearer ${env.TRANSCRIBE_API_KEY}`
     },
     body: form
   });
@@ -155,8 +155,8 @@ const translateWithOpenAI = async (input: {
   targetLanguage: string;
   sourceLanguage?: string;
 }): Promise<string> => {
-  if (!env.OPENAI_API_KEY) {
-    throw new ApiError(503, 'OpenAI translation is not configured (OPENAI_API_KEY is missing)');
+  if (!env.TRANSLATION_API_KEY) {
+    throw new ApiError(503, 'OpenAI translation is not configured (TRANSLATION_API_KEY is missing)');
   }
 
   const userPrompt = input.sourceLanguage
@@ -167,7 +167,7 @@ const translateWithOpenAI = async (input: {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${env.OPENAI_API_KEY}`
+      Authorization: `Bearer ${env.TRANSLATION_API_KEY}`
     },
     body: JSON.stringify({
       model: env.OPENAI_TRANSLATION_MODEL,

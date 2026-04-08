@@ -479,7 +479,7 @@ paths:
                       fromCache:
                         type: boolean
         '503':
-          description: OPENAI_API_KEY missing
+          description: TRANSCRIBE_API_KEY missing (or upstream unavailable)
 
   /api/speech/translate:
     post:
@@ -505,6 +505,8 @@ paths:
                     properties:
                       translatedText:
                         type: string
+        '503':
+          description: TRANSLATION_API_KEY or GEMINI_API_KEY missing (per TRANSLATION_PROVIDER)
 
 components:
   securitySchemes:

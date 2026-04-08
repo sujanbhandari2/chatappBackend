@@ -36,9 +36,7 @@ npm run dev
 - If `MESSAGE_ENCRYPTION_KEY` is not set, the backend derives encryption key material from `JWT_SECRET` to keep encryption active.
 - Existing plaintext rows remain readable; newly sent messages are stored encrypted with `enc:v1:` payload format.
 
-## FCM Push Setup
-- Set backend env:
-  - `FIREBASE_PROJECT_ID`
-  - `FIREBASE_CLIENT_EMAIL`
-  - `FIREBASE_PRIVATE_KEY` (service-account private key with `\n` escaped line breaks)
-- If these are missing, backend safely skips push delivery and logs a warning.
+## Speech & translation (optional)
+- `TRANSCRIBE_API_KEY` — OpenAI-compatible API key for audio transcription (Whisper).
+- `TRANSLATION_API_KEY` — OpenAI-compatible API key when `TRANSLATION_PROVIDER=openai`.
+- `GEMINI_API_KEY` — Google AI key when `TRANSLATION_PROVIDER=gemini`.
