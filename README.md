@@ -22,7 +22,7 @@
 
 - **Node.js 20.x**
 - **npm**
-- **PostgreSQL** (15+ recommended)
+- **PostgreSQL 18** (local via Compose; **hosted dev/QA/production: use Amazon RDS** — see `DEPLOYMENT.md`)
 - **Redis** (for Socket.IO when `NODE_ENV` is not `test`)
 - **Git**
 - Optional: **Docker** and **Docker Compose** (`docker-compose.yml` for app + Postgres + Redis)
