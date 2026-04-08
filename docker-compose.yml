@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: healthcare-chat-backend
+    container_name: chat-backend
     ports:
       - "${PORT}:4000"
     env_file:
@@ -17,7 +17,7 @@ services:
 
   postgres:
     image: postgres:16-alpine
-    container_name: healthcare-chat-postgres
+    container_name: chat-postgres
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -36,7 +36,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: healthcare-chat-redis
+    container_name: chat-redis
     command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
     ports:
       - "${REDIS_PORT}:6379"

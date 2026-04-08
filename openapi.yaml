@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: Healthcare Chat Backend API
+  title: Chat Backend API
   version: 1.0.0
   description: |
     REST API for auth, users, chat metadata, uploads, and speech helpers.

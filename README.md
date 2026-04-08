@@ -21,12 +21,22 @@
 - `messages` has composite FK to `conversations (id, tenant_id)` and `users (id, tenant_id)`.
 - Query middleware injects tenant filtering to block cross-tenant access.
 
+## Prerequisites
+
+- **Node.js 20.x**
+- **npm**
+- **PostgreSQL** (15+ recommended)
+- **Redis** (for Socket.IO outside `NODE_ENV=test`)
+- **Git**
+- Optional: **Docker** and **Docker Compose** (`docker-compose.yml` for app + Postgres + Redis)
+- Optional: **S3-compatible storage** and AI provider keys for uploads / speech / translation (see `.env.example`)
+
 ## Run
 ```bash
 npm install
 cp .env.example .env
-npm run prisma:generate
-npm run prisma:migrate
+npm run db:generate
+npm run db:migrate
 npm run seed
 npm run dev
 ```

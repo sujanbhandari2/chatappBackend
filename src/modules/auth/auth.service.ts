@@ -14,7 +14,7 @@ interface LoginInput {
   email: string;
 }
 
-const DEFAULT_TENANT_NAME = 'Public Healthcare Chat';
+const DEFAULT_TENANT_NAME = 'Public Chat';
 
 const ensureDefaultTenant = async () => {
   const firstTenant = await prisma.tenant.findFirst({

@@ -48,10 +48,10 @@ const upsertUserByEmail = async (tenantId: string, seedUser: SeedUser) => {
 const run = async (): Promise<void> => {
   const tenantA = await prisma.tenant.upsert({
     where: { id: '11111111-1111-1111-1111-111111111111' },
-    update: { name: 'Public Healthcare Chat' },
+    update: { name: 'Public Chat' },
     create: {
       id: '11111111-1111-1111-1111-111111111111',
-      name: 'Public Healthcare Chat'
+      name: 'Public Chat'
     }
   });
 

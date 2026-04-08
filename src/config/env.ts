@@ -10,7 +10,7 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(32, 'JWT_SECRET should be at least 32 characters for production use'),
   JWT_EXPIRES_IN: z.string().default('1d'),
   REDIS_URL: z.string().optional(),
-  POSTGRES_DB: z.string().default('healthcare_chat'),
+  POSTGRES_DB: z.string().default('chat'),
   POSTGRES_USER: z.string().default('postgres'),
   POSTGRES_PASSWORD: z.string().default('postgres'),
   POSTGRES_PORT: z.coerce.number().default(5432),
