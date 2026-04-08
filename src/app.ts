@@ -19,7 +19,7 @@ export const createApp = () => {
       credentials: true
     })
   );
-  app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+  app.use(morgan(env.NODE_ENV === 'production' ? 'production' : 'dev'));
   app.use(express.json({ limit: '5mb' }));
   registerRoutes(app);
 

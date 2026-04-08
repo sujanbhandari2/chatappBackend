@@ -12,9 +12,6 @@
 - `POST /api/auth/register` with `{ username, password }` creates a user in the default tenant.
 - `POST /api/auth/login` with `{ username, password }` returns a JWT token.
 - Each authenticated user is auto-enrolled in the global conversation so messages can reach all registered users.
-- Mobile push token APIs:
-  - `POST /api/users/push-token` with `{ token, platform, deviceId? }`
-  - `DELETE /api/users/push-token` with `{ token }`
 
 ## Tenant Isolation
 - DB model includes `tenant_id` on tenant-scoped tables.
@@ -26,7 +23,7 @@
 - **Node.js 20.x**
 - **npm**
 - **PostgreSQL** (15+ recommended)
-- **Redis** (for Socket.IO outside `NODE_ENV=test`)
+- **Redis** (for Socket.IO when `NODE_ENV` is not `test`)
 - **Git**
 - Optional: **Docker** and **Docker Compose** (`docker-compose.yml` for app + Postgres + Redis)
 - Optional: **S3-compatible storage** and AI provider keys for uploads / speech / translation (see `.env.example`)
